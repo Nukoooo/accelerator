@@ -1,0 +1,73 @@
+name: Master Build
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  linux-build:
+    runs-on: ubuntu-latest
+    container:
+      image: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+    steps:
+      - name: Install Linux packages
+        run: |
+          sudo apt update
+          sudo apt install -yq --no-install-recommends g++-multilib build-essential
+
+      - name: Install Clang16
+        run: |
+          apt update && apt install -y clang-16
+
+      # TimeZone
+      - name: Set Timezone
+        uses: szenius/set-timezone@v2.0
+        with:
+          timezoneLinux: "Asia/Shanghai"
+          timezoneMacos: "Asia/Shanghai"
+          timezoneWindows: "China Standard Time"
+
+      # SteamRT3 capabilities
+      - name: Mark repository as safe
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      # CheckOut
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 99999
+
+      # Check Git
+      - name: Check Git
+        shell: bash
+        run: |
+          echo "GITCOMMIT=$COMMIT_VERSION" >> $GITHUB_ENV
+
+      - name: Prepare Build
+        shell: bash
+        run: |
+          mkdir -p ./build/sharp/bin/linuxsteamrt64
+
+      - name: Build Accelerator
+        run: |
+          cmake -B build -DCMAKE_C_COMPILER=clang-16 -DCMAKE_CXX_COMPILER=clang++-16 -DCMAKE_BUILD_TYPE=Release && cmake --build build -- -j$(nproc)
+
+      # Copy Assets
+      - name: Copy Assets
+        shell: bash
+        run: |
+          cp -r ./Accelerator/build/libaccelerator.so ./build/sharp/bin/libaccelerator.so
+
+      # Upload
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        env:
+          GITCOMMIT: ${{env.GITCOMMIT}}
+        with:
+          name: Accelerator-git${{env.GITCOMMIT}}-linux
+          path: ./build
+          if-no-files-found: error
+          retention-days: 30
