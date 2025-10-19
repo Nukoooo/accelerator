@@ -48,7 +48,7 @@ jobs:
       - name: Prepare Build
         shell: bash
         run: |
-          mkdir -p ./build/sharp/bin/linuxsteamrt64
+          mkdir -p ./assets/sharp/bin/linuxsteamrt64
 
       - name: Build Accelerator
         run: |
@@ -58,7 +58,7 @@ jobs:
       - name: Copy Assets
         shell: bash
         run: |
-          cp -r ./Accelerator/build/libaccelerator.so ./build/sharp/bin/libaccelerator.so
+          cp -r ./build/libaccelerator.so ./assets/sharp/bin/libaccelerator.so
 
       # Upload
       - name: Upload artifact
@@ -68,6 +68,6 @@ jobs:
           GITCOMMIT: ${{env.GITCOMMIT}}
         with:
           name: Accelerator-git${{env.GITCOMMIT}}-linux
-          path: ./build
+          path: ./assets
           if-no-files-found: error
           retention-days: 30
