@@ -1,4 +1,4 @@
-
+#include <filesystem>
 #include <config.h>
 
 #include "client/linux/handler/exception_handler.h"
@@ -45,59 +45,64 @@ static void kill_myself()
 
 static bool DumpCallback(const google_breakpad::MinidumpDescriptor& descriptor, void* context, bool succeeded)
 {
-    fmt::println("Writing crashdump...");
     g_should_stop = true;
 
-    if (mkdir("./breakpad", 0755) != 0 && errno != EEXIST)
+    try
     {
+        std::filesystem::create_directories("./breakpad");
+    }
+    catch (const std::exception& e)
+    {
+        FILE* error_log = fopen("./breakpad_error.log", "a");
+        if (error_log)
+        {
+            fprintf(error_log, "Failed to create breakpad directory: %s\n", e.what());
+            fclose(error_log);
+            
+        }
         kill_myself();
         return false;
     }
 
-    char timestamp[80];
-    char base_path[MAX_PATH_LENGTH];
-    char log_path[MAX_PATH_LENGTH];
-    char info_path[MAX_PATH_LENGTH];
+    auto t               = std::time(nullptr);
+    auto timestamp       = fmt::format("{:%Y-%m-%d-%H-%M-%S}", fmt::localtime(t));
+    auto base_path       = fmt::format("./breakpad/crashdump_{}", timestamp);
+    std::string log_path = base_path + ".log";
 
-    time_t t           = time(NULL);
-    struct tm* tm_info = localtime(&t);
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d-%H-%M-%S", tm_info);
-
-    snprintf(base_path, sizeof(base_path), "./breakpad/crashdump_%s", timestamp);
-    snprintf(log_path, sizeof(log_path), "%s.log", base_path);
-
-    FILE* log_file = fopen(log_path, "w");
+    // Open a log file for errors
+    FILE* log_file = fopen(log_path.c_str(), "w");
     if (!log_file)
     {
+        // Last resort - try to open a generic log
         log_file = fopen("./breakpad/crash_error.log", "a");
         if (!log_file)
-        {
-            kill_myself();
             return false;
-        }
-        fprintf(log_file, "[%s] Failed to open log file at %s\n", timestamp, log_path);
+        fprintf(log_file, "[%s] Failed to open log file at %s\n", timestamp.c_str(), log_path.c_str());
     }
 
     if (!succeeded)
     {
-        fprintf(log_file, "Failed to write minidump to %s\n", base_path);
+        fprintf(log_file, "Failed to write minidump to %s\n", base_path.c_str());
         fclose(log_file);
         kill_myself();
         return false;
     }
 
-    google_breakpad::SimpleSymbolSupplier* symbolSupplier = NULL;
+    std::unique_ptr<google_breakpad::SimpleSymbolSupplier> symbolSupplier;
     google_breakpad::BasicSourceLineResolver resolver;
-    google_breakpad::MinidumpProcessor minidump_processor(symbolSupplier, &resolver);
+    google_breakpad::MinidumpProcessor minidump_processor(symbolSupplier.get(), &resolver);
 
-    google_breakpad::MinidumpThreadList::set_max_threads(UINT32_MAX);
-    google_breakpad::MinidumpMemoryList::set_max_regions(UINT32_MAX);
+    // Increase the maximum number of threads and regions.
+    google_breakpad::MinidumpThreadList::set_max_threads(std::numeric_limits<uint32_t>::max());
+    google_breakpad::MinidumpMemoryList::set_max_regions(std::numeric_limits<uint32_t>::max());
 
+    // Process the minidump.
     google_breakpad::Minidump miniDump(descriptor.path());
     if (!miniDump.Read())
     {
         fprintf(log_file, "Failed to read minidump from %s\n", descriptor.path());
         fclose(log_file);
+        kill_myself();
         return succeeded;
     }
 
@@ -108,13 +113,14 @@ static bool DumpCallback(const google_breakpad::MinidumpDescriptor& descriptor, 
     {
         fprintf(log_file, "MinidumpProcessor::Process failed for %s\n", descriptor.path());
         fclose(log_file);
+        kill_myself();
         return succeeded;
     }
 
     fprintf(log_file, "Successfully processed minidump\n");
 
-    snprintf(info_path, sizeof(info_path), "%s.txt", base_path);
-    FILE* info_file = fopen(info_path, "w");
+    std::string info_path = base_path + ".txt";
+    FILE* info_file       = fopen(info_path.c_str(), "w");
     if (info_file)
     {
         FILE* old_stdout = stdout;
@@ -123,25 +129,24 @@ static bool DumpCallback(const google_breakpad::MinidumpDescriptor& descriptor, 
         fflush(stdout);
         stdout = old_stdout;
         fclose(info_file);
-        fprintf(log_file, "Successfully wrote process state to %s\n", info_path);
+        fprintf(log_file, "Successfully wrote process state to %s\n", info_path.c_str());
     }
     else
     {
-        fprintf(log_file, "Failed to open file for process state at %s: %s\n", info_path, strerror(errno));
+        fprintf(log_file, "Failed to open file for process state at %s: %s\n", info_path.c_str(), strerror(errno));
     }
 
-    if (remove(descriptor.path()) != 0)
+    try
     {
-        fprintf(log_file, "Failed to remove raw minidump %s: %s\n", descriptor.path(), strerror(errno));
-    }
-    else
-    {
+        std::filesystem::remove(descriptor.path());
         fprintf(log_file, "Successfully removed raw minidump\n");
+    }
+    catch (const std::exception& e)
+    {
+        fprintf(log_file, "Failed to remove raw minidump: %s\n", e.what());
     }
 
     fclose(log_file);
-
-    kill_myself();
     return succeeded;
 }
 

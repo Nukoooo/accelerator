@@ -67,7 +67,7 @@ jobs:
         env:
           GITCOMMIT: ${{env.GITCOMMIT}}
         with:
-          name: Accelerator-git${{env.GITCOMMIT}}-linux
+          name: Accelerator-linux
           path: ./assets
           if-no-files-found: error
           retention-days: 30
