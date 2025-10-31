@@ -10,7 +10,7 @@ CPMAddPackage(NAME fmt
 			  
 CPMAddPackage(NAME breakpad
               GITHUB_REPOSITORY Nukoooo/breakpad
-              GIT_TAG e7012124436293ca2b016035cd87bb56c79a7771
+              GIT_TAG 996fe2127ebc71b3ee5bb2ed15f59a6dc607c7f5
               SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/breakpad/)
 
 set(accelerator_SOURCES
